@@ -3,7 +3,7 @@
  */
 #include "csapp.h"
 
-void echo(int connfd)
+/*void echo(int connfd)
 {
     size_t n;
     char buf[MAXLINE];
@@ -14,5 +14,5 @@ void echo(int connfd)
         printf("server received %u bytes\n", (unsigned int)n);
         Rio_writen(connfd, buf, n);
     }
-}
+}*/
 

@@ -1,45 +1,61 @@
-/*
- * echoclient.c - An echo client
- */
 #include "csapp.h"
+#include "ftp.h"
+#define MAX_NAME_LEN 256
+#define CLIENT_DIR "./clientdir/"
 
 int main(int argc, char **argv)
 {
-    int clientfd, port;
-    char *host, buf[MAXLINE];
+    int clientfd;
+    char *host;
+    int port;
+    char filename[MAX_NAME_LEN];
+    char filepath[MAX_NAME_LEN + sizeof(CLIENT_DIR)];
+    request_t req;
+    char buf[MAXLINE];
     rio_t rio;
+    int filefd;
+    ssize_t n;
 
-    if (argc != 3) {
-        fprintf(stderr, "usage: %s <host> <port>\n", argv[0]);
+    if (argc != 4)
+    {
+        fprintf(stderr, "usage: %s <host> <port> <filename>\n", argv[0]);
         exit(0);
     }
+
     host = argv[1];
     port = atoi(argv[2]);
+    strncpy(filename, argv[3], MAX_NAME_LEN - 1);
 
-    /*
-     * Note that the 'host' can be a name or an IP address.
-     * If necessary, Open_clientfd will perform the name resolution
-     * to obtain the IP address.
-     */
     clientfd = Open_clientfd(host, port);
-    
-    /*
-     * At this stage, the connection is established between the client
-     * and the server OS ... but it is possible that the server application
-     * has not yet called "Accept" for this connection
-     */
-    printf("client connected to server OS\n"); 
-    
-    Rio_readinitb(&rio, clientfd);
 
-    while (Fgets(buf, MAXLINE, stdin) != NULL) {
-        Rio_writen(clientfd, buf, strlen(buf));
-        if (Rio_readlineb(&rio, buf, MAXLINE) > 0) {
-            Fputs(buf, stdout);
-        } else { /* the server has prematurely closed the connection */
+    //Construit la requete a envoyer au serveur.
+    req.type = GET;
+    strncpy(req.name, filename, sizeof(req.name) - 1);
+    Rio_writen(clientfd, &req, sizeof(req));
+
+    //Ouvre le fichier de destination
+    snprintf(filepath, sizeof(filepath), "%s%s", CLIENT_DIR, filename);
+    filefd = open(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (filefd < 0)
+    {
+        perror("open client file");
+        exit(1);
+    }
+
+    //Reception et écriture des données.
+    Rio_readinitb(&rio, clientfd);
+    while ((n = Rio_readnb(&rio, buf, MAXLINE)) > 0)
+    {
+        if (write(filefd, buf, n) != n)
+        {
+            perror("write");
             break;
         }
     }
+
+    printf("Fichier '%s' reçu dans %s\n", filename, filepath);
+
+    close(filefd);
     Close(clientfd);
-    exit(0);
+    return 0;
 }

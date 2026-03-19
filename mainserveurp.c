@@ -3,20 +3,14 @@
  */
 
 #include "csapp.h"
+#include "ftp.h"
 
 #define MAX_NAME_LEN 256
 #define N_PROC 5
 
-typedef enum {
-    GET,
-    PUT,
-    LS
-} typereq_t;
+#define SERV_DIR "./servdir/"
 
-typedef struct {
-    typereq_t type;
-    char name[256];
-} request_t;
+volatile sig_atomic_t children_alive = N_PROC;
 
 //Tableau global stockant les pids des processus du pool.
 pid_t children[N_PROC];
@@ -29,7 +23,9 @@ void sigchld_handler(int sig)
     // Boucle non blocante pour récolter les enfants terminés et arrêtés
     while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0)
     {
-        // printf("[Process %d terminé]\n", pid);
+        if(WIFEXITED(status) || WIFSIGNALED(status)){
+            children_alive --;
+        }
     }
     if (pid == -1 && errno != ECHILD)
     {
@@ -47,7 +43,54 @@ void sigint_handler(int sig){
     }
 }
 
-void echo(int connfd);
+void handle_request(int connfd)
+{
+    request_t req;
+    char filepath[MAX_NAME_LEN + sizeof(SERV_DIR)];
+    char buf[MAXLINE];
+    int filefd;
+    //int size_t;
+    ssize_t n;
+    struct stat sf;
+
+    //Lit la requête du client
+    if (Rio_readn(connfd, &req, sizeof(req)) != sizeof(req))
+    {
+        fprintf(stderr, "Erreur lecture requête\n");
+        return;
+    }
+
+    //A enlever plus tard.
+    if (req.type != GET)
+    {
+        fprintf(stderr, "Requête non supportée\n");
+        return;
+    }
+
+    //Construit le chemin du fichier
+    snprintf(filepath, sizeof(filepath), "%s%s", SERV_DIR, req.name);
+    printf("GET %s\n", filepath);
+
+    filefd = open(filepath, O_RDONLY);
+    if (filefd < 0)
+    {
+        fprintf(stderr, "Fichier introuvable : %s\n", filepath);
+        // Envoyer 0 octet = signal d'erreur pour le client
+        return;
+    }
+
+    //Récupère la taille du fichier pour lecture en 1 fois.
+    fstat(filefd, &sf);
+    off_t size = sf.st_size;
+
+    //Lecture et envoi des données.
+    while ((n = read(filefd, buf, size)) > 0)
+    {
+        Rio_writen(connfd, buf, size);
+    }
+
+    close(filefd);
+}
 
 /*
  * Note that this code only works with IPv4 addresses
@@ -69,7 +112,6 @@ int main(int argc, char **argv)
     }
 
     Signal(SIGCHLD, sigchld_handler);
-    Signal(SIGINT, sigint_handler);
     port = 2121;
     listenfd = Open_listenfd(port);
 
@@ -102,14 +144,16 @@ int main(int argc, char **argv)
                 printf("server connected to %s (%s)\n", client_hostname,
                        client_ip_string);
 
-                echo(connfd);
+                handle_request(connfd);
                 Close(connfd);
             }
         } else {
             children[i] = pid;
         }
     }
-    while (1)
+    //Défini le signal après la création du pool pour modifier uniquement le handler du pere, les fils auront le traitant de SIGINT par défaut.
+    Signal(SIGINT, sigint_handler);
+    while (children_alive > 0)
     {
         pause();
     }
