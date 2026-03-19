@@ -45,10 +45,6 @@ void sigint_handler(int sig){
             kill(children[i], SIGINT);
         }
     }
-
-    for(int i = 0; i < N_PROC; i ++){
-        if(children[i] > 0) waitpid(children[i], NULL, 0);
-    }
 }
 
 void echo(int connfd);
@@ -73,7 +69,7 @@ int main(int argc, char **argv)
     }
 
     Signal(SIGCHLD, sigchld_handler);
-
+    Signal(SIGINT, sigint_handler);
     port = 2121;
     listenfd = Open_listenfd(port);
 
