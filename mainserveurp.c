@@ -86,7 +86,7 @@ void handle_request(int connfd)
     //Lecture et envoi des données.
     while ((n = read(filefd, buf, size)) > 0)
     {
-        Rio_writen(connfd, buf, size);
+        Rio_writen(connfd, buf, n);
     }
 
     close(filefd);
