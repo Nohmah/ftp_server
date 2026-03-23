@@ -1,5 +1,5 @@
 /*
- * echoserveri.c - An iterative echo server
+ * mainserveurp.c - Un serveur avec pool de processus
  */
 
 #include "csapp.h"
@@ -46,6 +46,7 @@ void sigint_handler(int sig){
 void handle_request(int connfd)
 {
     request_t req;
+    response_t res;
     char filepath[MAX_NAME_LEN + sizeof(SERV_DIR)];
     char buf[MAXLINE];
     int filefd;
@@ -60,10 +61,11 @@ void handle_request(int connfd)
         return;
     }
 
-    //A enlever plus tard.
     if (req.type != GET)
     {
-        fprintf(stderr, "Requête non supportée\n");
+        res.code_retour = ERREUR;
+        Rio_writen(connfd, &res, sizeof(res));
+        fprintf(stderr, "Requête non supportée\n"); // répétitif avec le client
         return;
     }
 
@@ -73,12 +75,14 @@ void handle_request(int connfd)
 
     filefd = open(filepath, O_RDONLY);
     if (filefd < 0)
-    {
+    {   
+        res.code_retour = ERREUR;
+        Rio_writen(connfd, &res, sizeof(res));
         fprintf(stderr, "Fichier introuvable : %s\n", filepath);
-        // Envoyer 0 octet = signal d'erreur pour le client
         return;
     }
-
+    res.code_retour = SUCCES;
+    Rio_writen(connfd, &res, sizeof(res));
     //Récupère la taille du fichier pour lecture en 1 fois.
     fstat(filefd, &sf);
     off_t size = sf.st_size;
