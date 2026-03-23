@@ -2,12 +2,12 @@
 #include "ftp.h"
 #define MAX_NAME_LEN 256
 #define CLIENT_DIR "./clientdir/"
+#define PORT 2121
 
 int main(int argc, char **argv)
 {
     int clientfd;
     char *host;
-    int port;
     char filename[MAX_NAME_LEN];
     char filepath[MAX_NAME_LEN + sizeof(CLIENT_DIR)];
     request_t req;
@@ -16,17 +16,16 @@ int main(int argc, char **argv)
     int filefd;
     ssize_t n;
 
-    if (argc != 4)
+    if (argc != 3)
     {
-        fprintf(stderr, "usage: %s <host> <port> <filename>\n", argv[0]);
+        fprintf(stderr, "usage: %s <host> <filename>\n", argv[0]);
         exit(0);
     }
 
     host = argv[1];
-    port = atoi(argv[2]);
-    strncpy(filename, argv[3], MAX_NAME_LEN - 1);
+    strncpy(filename, argv[2], MAX_NAME_LEN - 1);
 
-    clientfd = Open_clientfd(host, port);
+    clientfd = Open_clientfd(host, PORT);
 
     //Construit la requete a envoyer au serveur.
     req.type = GET;
