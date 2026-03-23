@@ -61,39 +61,41 @@ void handle_request(int connfd)
         return;
     }
 
-    if (req.type != GET)
-    {
-        res.code_retour = ERREUR;
+    if (req.type == GET){
+        //Construit le chemin du fichier
+        snprintf(filepath, sizeof(filepath), "%s%s", SERV_DIR, req.name);
+        printf("GET %s\n", filepath);
+
+        filefd = open(filepath, O_RDONLY);
+        if (filefd < 0)
+        {   
+            //En faire une fonction
+            res.code_retour = ERREUR;
+            strcpy(res.message, "Fichier introuvable dans le serveur");
+            Rio_writen(connfd, &res, sizeof(res));
+            //fprintf(stderr, "Fichier introuvable : %s\n", filepath);
+            return;
+        }
+        res.code_retour = SUCCES;
         Rio_writen(connfd, &res, sizeof(res));
-        fprintf(stderr, "Requête non supportée\n"); // répétitif avec le client
+        //Récupère la taille du fichier pour lecture en 1 fois.
+        fstat(filefd, &sf);
+        off_t size = sf.st_size;
+
+        //Lecture et envoi des données.
+        while ((n = read(filefd, buf, size)) > 0)
+        {
+            Rio_writen(connfd, buf, n);
+        }
+        close(filefd);
+    } else {
+        //En faire une fonction
+        res.code_retour = ERREUR;
+        strcpy(res.message, "Requête non supportée par le serveur");
+        Rio_writen(connfd, &res, sizeof(res));
+        //fprintf(stderr, "Requête non supportée\n"); 
         return;
     }
-
-    //Construit le chemin du fichier
-    snprintf(filepath, sizeof(filepath), "%s%s", SERV_DIR, req.name);
-    printf("GET %s\n", filepath);
-
-    filefd = open(filepath, O_RDONLY);
-    if (filefd < 0)
-    {   
-        res.code_retour = ERREUR;
-        Rio_writen(connfd, &res, sizeof(res));
-        fprintf(stderr, "Fichier introuvable : %s\n", filepath);
-        return;
-    }
-    res.code_retour = SUCCES;
-    Rio_writen(connfd, &res, sizeof(res));
-    //Récupère la taille du fichier pour lecture en 1 fois.
-    fstat(filefd, &sf);
-    off_t size = sf.st_size;
-
-    //Lecture et envoi des données.
-    while ((n = read(filefd, buf, size)) > 0)
-    {
-        Rio_writen(connfd, buf, n);
-    }
-
-    close(filefd);
 }
 
 /*

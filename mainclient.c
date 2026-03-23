@@ -42,7 +42,7 @@ int main(int argc, char **argv)
         if (strncmp(saisie, "get ", 4) == 0){
             strncpy(filename, saisie + 4, MAX_NAME_LEN - 1);//+4 pour commencer à lire apres le get
             
-            //Vérifie si il y a un nom de fichier après get
+            //Vérifie si il y a un nom de fichier après get (à faire dans le serveur)
             if (strlen(filename) == 0)
             {
                 fprintf(stderr, "Erreur: aucun nom de fichier spécifié\n");
@@ -58,8 +58,8 @@ int main(int argc, char **argv)
 
             if (res.code_retour == ERREUR)
             {
-                fprintf(stderr, "Erreur:\n"); // à compléter avec le champ message de res
-                continue;  // ou continue pour rester dans la boucle
+                fprintf(stderr, "Erreur:%s\n", res.message);
+                continue;
             }
 
             //Ouvre le fichier de destination
@@ -86,7 +86,17 @@ int main(int argc, char **argv)
             close(filefd);
             break;
         } else {
-            fprintf(stderr, "Requête non supportée\n");
+            // La requete n'est pas supportée
+            req.type = ERR;
+            Rio_writen(clientfd, &req, sizeof(req));
+
+            Rio_readn(clientfd, &res, sizeof(res));
+
+            if (res.code_retour == ERREUR)
+            {
+                fprintf(stderr, "Erreur:%s\n", res.message);
+                continue;
+            }
         }
     }
     Close(clientfd);

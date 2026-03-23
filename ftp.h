@@ -9,7 +9,8 @@
 typedef enum {
     GET,
     PUT,
-    LS
+    LS,
+    ERR
 } typereq_t;
 
 typedef struct {
