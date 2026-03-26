@@ -13,12 +13,15 @@ int main(int argc, char **argv)
     char saisie[MAXLINE];
     request_t req;
     response_t response;
+    transfer_t transfer;
+    char buf[MAX_BLOCK_SIZE];
     struct timeval debut, fin;
-    
-    char buf[MAXLINE];
-    rio_t rio;
     int filefd;
     ssize_t n;
+    uint64_t bytes_left;
+    uint32_t i;
+    size_t to_read;
+    int transfer_ok;
 
     if (argc != 2)
     {
@@ -65,6 +68,18 @@ int main(int argc, char **argv)
                 continue;
             }
 
+            if (Rio_readn(clientfd, &transfer, sizeof(transfer)) != sizeof(transfer))
+            {
+                fprintf(stderr, "Erreur: entete de transfert incomplete\n");
+                break;
+            }
+
+            if (transfer.block_size == 0 || transfer.block_size > MAX_BLOCK_SIZE)
+            {
+                fprintf(stderr, "Erreur: taille de bloc non supportee (%u)\n", transfer.block_size);
+                break;
+            }
+
             //Ouvre le fichier de destination
             snprintf(filepath, sizeof(filepath), "%s%s", CLIENT_DIR, filename);
             filefd = open(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -73,19 +88,42 @@ int main(int argc, char **argv)
                 perror("open client file");
                 exit(1);
             }
+            //Reception et ecriture des donnees bloc par bloc.
+            bytes_left = transfer.file_size;
+            transfer_ok = 1;
             double taille = 0;
-            //Reception et écriture des données.
-            Rio_readinitb(&rio, clientfd);
-            while ((n = Rio_readnb(&rio, buf, MAXLINE)) > 0)
+            for (i = 0; i < transfer.block_count; i++)
             {
+                to_read = (bytes_left >= transfer.block_size) ? transfer.block_size : (size_t)bytes_left;
+
+                n = Rio_readn(clientfd, buf, to_read);
+                if (n != (ssize_t)to_read)
+                {
+                    fprintf(stderr, "Erreur: bloc %u incomplet recu\n", i + 1);
+                    transfer_ok = 0;
+                    break;
+                }
+
                 if (write(filefd, buf, n) != n)
                 {
                     perror("write");
+                    transfer_ok = 0;
                     break;
                 }
-                taille+=n;
+                taille +=n;
+
+                bytes_left -= (uint64_t)n;
             }
 
+            if (transfer_ok && bytes_left == 0)
+            {
+                printf("Fichier '%s' recu dans %s (%u blocs de %u octets max)\n",
+                       filename, filepath, transfer.block_count, transfer.block_size);
+            }
+            else
+            {
+                fprintf(stderr, "Erreur: transfert incomplet pour '%s'\n", filename);
+            }   
             gettimeofday(&fin, NULL);
             printf("Transfer successfully complete.\n");
             //Récupère les statistiques du transfert

@@ -48,8 +48,9 @@ void handle_request(int connfd)
 {
     request_t req;
     response_t response;
+    transfer_t transfer;
     char filepath[MAX_NAME_LEN + sizeof(SERV_DIR)];
-    char buf[MAXLINE];
+    char buf[MAX_BLOCK_SIZE];
     int filefd;
     //int size_t;
     ssize_t n;
@@ -81,12 +82,19 @@ void handle_request(int connfd)
         Rio_writen(connfd, &response, sizeof(response));
         //Récupère la taille du fichier pour lecture en 1 fois.
         fstat(filefd, &sf);
-        off_t size = sf.st_size;
+        transfer.block_size = MAX_BLOCK_SIZE;
+        transfer.file_size =(uint64_t)sf.st_size;
+        transfer.block_count = (uint32_t)((transfer.file_size + MAX_BLOCK_SIZE -1) / MAX_BLOCK_SIZE);
+        Rio_writen(connfd, &transfer, sizeof(transfer));
 
         //Lecture et envoi des données par paquets.
-        while ((n = read(filefd, buf, size)) > 0)
+        while ((n = read(filefd, buf, MAX_BLOCK_SIZE)) > 0)
         {
             Rio_writen(connfd, buf, n);
+        }
+
+        if( n < 0){
+            perror("read");
         }
         close(filefd);
     }
