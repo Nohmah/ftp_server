@@ -4,6 +4,7 @@
 
 #include "csapp.h"
 #include "ftp.h"
+#include "time.h"
 
 #define MAX_NAME_LEN 256
 #define N_PROC 5
@@ -46,7 +47,7 @@ void sigint_handler(int sig){
 void handle_request(int connfd)
 {
     request_t req;
-    response_t res;
+    response_t response;
     char filepath[MAX_NAME_LEN + sizeof(SERV_DIR)];
     char buf[MAXLINE];
     int filefd;
@@ -70,36 +71,29 @@ void handle_request(int connfd)
         if (filefd < 0)
         {   
             //En faire une fonction
-            res.code_retour = ERREUR;
-            strcpy(res.message, "Fichier introuvable dans le serveur");
-            Rio_writen(connfd, &res, sizeof(res));
+            response.code_retour = ERREUR;
+            strcpy(response.message, "Fichier introuvable dans le serveur");
+            Rio_writen(connfd, &response, sizeof(response));
             //fprintf(stderr, "Fichier introuvable : %s\n", filepath);
             return;
         }
-        res.code_retour = SUCCES;
-        Rio_writen(connfd, &res, sizeof(res));
+        response.code_retour = SUCCES;
+        Rio_writen(connfd, &response, sizeof(response));
         //Récupère la taille du fichier pour lecture en 1 fois.
         fstat(filefd, &sf);
         off_t size = sf.st_size;
 
-        //Lecture et envoi des données.
+        //Lecture et envoi des données par paquets.
         while ((n = read(filefd, buf, size)) > 0)
         {
             Rio_writen(connfd, buf, n);
         }
         close(filefd);
-    } else {
-        //En faire une fonction
-        res.code_retour = ERREUR;
-        strcpy(res.message, "Requête non supportée par le serveur");
-        Rio_writen(connfd, &res, sizeof(res));
-        //fprintf(stderr, "Requête non supportée\n"); 
-        return;
     }
 }
 
 /*
- * Note that this code only works with IPv4 addresses
+ * Note that this code only works with IPv4 addresponseses
  * (IPv6 is not supported)
  */
 int main(int argc, char **argv)
