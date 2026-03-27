@@ -45,7 +45,6 @@ int main(int argc, char **argv)
             continue;
         }
         if (strncmp(saisie, "get ", 4) == 0){
-            gettimeofday(&debut, NULL);
             strncpy(filename, saisie + 4, MAX_NAME_LEN - 1);//+4 pour commencer à lire apres le get
             
             //Vérifie si il y a un nom de fichier après get (à faire dans le serveur)
@@ -67,13 +66,11 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Erreur:%s\n", response.message);
                 continue;
             }
-
             if (Rio_readn(clientfd, &transfer, sizeof(transfer)) != sizeof(transfer))
             {
                 fprintf(stderr, "Erreur: entete de transfert incomplete\n");
                 break;
             }
-
             if (transfer.block_size == 0 || transfer.block_size > MAX_BLOCK_SIZE)
             {
                 fprintf(stderr, "Erreur: taille de bloc non supportee (%u)\n", transfer.block_size);
@@ -92,6 +89,7 @@ int main(int argc, char **argv)
             bytes_left = transfer.file_size;
             transfer_ok = 1;
             double taille = 0;
+            gettimeofday(&debut, NULL);
             for (i = 0; i < transfer.block_count; i++)
             {
                 to_read = (bytes_left >= transfer.block_size) ? transfer.block_size : (size_t)bytes_left;
@@ -127,15 +125,15 @@ int main(int argc, char **argv)
             gettimeofday(&fin, NULL);
             printf("Transfer successfully complete.\n");
             //Récupère les statistiques du transfert
-            int temps_sec = fin.tv_sec - debut.tv_sec;
-            int temps_microsec = fin.tv_usec - debut.tv_usec;
-            printf("%f bytes received in %d.%d seconds (%f Kbytes)", taille, temps_sec, temps_microsec, (taille*1e-3));
+            double temps = (fin.tv_sec - debut.tv_sec) + (fin.tv_usec - debut.tv_usec)/1e6;
+            printf("%f bytes received in %f seconds (%f Kbytes/s)\n", taille, temps, (taille*1e-3)/temps);
             //printf("Fichier '%s' reçu dans %s\n", filename, filepath);
             close(filefd);
+        } else if (strcmp(saisie, "bye")==0){
             break;
         } else {
             // La requete n'est pas supportée
-            fprintf(stderr, "Erreur: Requête non supportée par le serveur");
+            fprintf(stderr, "Erreur: Requête non supportée par le serveur\n");
         }
     }
     Close(clientfd);

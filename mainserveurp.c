@@ -44,7 +44,7 @@ void sigint_handler(int sig){
     }
 }
 
-void handle_request(int connfd)
+void handle_connection(int connfd)
 {
     request_t req;
     response_t response;
@@ -56,47 +56,54 @@ void handle_request(int connfd)
     ssize_t n;
     struct stat sf;
 
-    //Lit la requête du client
-    if (Rio_readn(connfd, &req, sizeof(req)) != sizeof(req))
-    {
-        fprintf(stderr, "Erreur lecture requête\n");
-        return;
-    }
+    while (1){
+        //Lit la requête du client
+        n = Rio_readn(connfd, &req, sizeof(req));
+        //Le client a fermé la connexion
+        if (n == 0){
+            printf("Client deconnecte\n");
+            break;
+        }
+        //La requête est illisible
+        else if (n != sizeof(req)) {
+            fprintf(stderr, "Erreur lecture requête\n");
+            break;
+        }
+        if (req.type == GET){
+            //Construit le chemin du fichier
+            snprintf(filepath, sizeof(filepath), "%s%s", SERV_DIR, req.name);
+            printf("GET %s\n", filepath);
 
-    if (req.type == GET){
-        //Construit le chemin du fichier
-        snprintf(filepath, sizeof(filepath), "%s%s", SERV_DIR, req.name);
-        printf("GET %s\n", filepath);
-
-        filefd = open(filepath, O_RDONLY);
-        if (filefd < 0)
-        {   
-            //En faire une fonction
-            response.code_retour = ERREUR;
-            strcpy(response.message, "Fichier introuvable dans le serveur");
+            filefd = open(filepath, O_RDONLY);
+            if (filefd < 0)
+            {   
+                //En faire une fonction
+                response.code_retour = ERREUR;
+                strcpy(response.message, "Fichier introuvable dans le serveur");
+                Rio_writen(connfd, &response, sizeof(response));
+                //fprintf(stderr, "Fichier introuvable : %s\n", filepath);
+                continue;
+            }
+            response.code_retour = SUCCES;
             Rio_writen(connfd, &response, sizeof(response));
-            //fprintf(stderr, "Fichier introuvable : %s\n", filepath);
-            return;
-        }
-        response.code_retour = SUCCES;
-        Rio_writen(connfd, &response, sizeof(response));
-        //Récupère la taille du fichier pour lecture en 1 fois.
-        fstat(filefd, &sf);
-        transfer.block_size = MAX_BLOCK_SIZE;
-        transfer.file_size =(uint64_t)sf.st_size;
-        transfer.block_count = (uint32_t)((transfer.file_size + MAX_BLOCK_SIZE -1) / MAX_BLOCK_SIZE);
-        Rio_writen(connfd, &transfer, sizeof(transfer));
+            //Récupère la taille du fichier pour lecture en 1 fois.
+            fstat(filefd, &sf);
+            transfer.block_size = MAX_BLOCK_SIZE;
+            transfer.file_size =(uint64_t)sf.st_size;
+            transfer.block_count = (uint32_t)((transfer.file_size + MAX_BLOCK_SIZE -1) / MAX_BLOCK_SIZE);
+            Rio_writen(connfd, &transfer, sizeof(transfer));
 
-        //Lecture et envoi des données par paquets.
-        while ((n = read(filefd, buf, MAX_BLOCK_SIZE)) > 0)
-        {
-            Rio_writen(connfd, buf, n);
-        }
+            //Lecture et envoi des données par paquets.
+            while ((n = read(filefd, buf, MAX_BLOCK_SIZE)) > 0)
+            {
+                Rio_writen(connfd, buf, n);
+            }
 
-        if( n < 0){
-            perror("read");
+            if( n < 0){
+                perror("read");
+            }
+            close(filefd);
         }
-        close(filefd);
     }
 }
 
@@ -152,7 +159,7 @@ int main(int argc, char **argv)
                 printf("server connected to %s (%s)\n", client_hostname,
                        client_ip_string);
 
-                handle_request(connfd);
+                handle_connection(connfd);
                 Close(connfd);
             }
         } else {
