@@ -57,6 +57,20 @@ int main(int argc, char **argv)
             //Construit la requete a envoyer au serveur.
             req.type = GET;
             strncpy(req.name, filename, sizeof(req.name) - 1);
+
+            //Précise l'offset du fichier pour la reprise du telechargement
+            struct stat st;
+            uint64_t offset = 0;
+
+            snprintf(filepath, sizeof(filepath), "%s%s", CLIENT_DIR, filename);
+            
+
+            if(stat(filepath, &st) == 0){
+                offset = st.st_size;
+            }
+
+            req.offset = offset;
+
             Rio_writen(clientfd, &req, sizeof(req));
 
             Rio_readn(clientfd, &response, sizeof(response));
@@ -79,7 +93,9 @@ int main(int argc, char **argv)
 
             //Ouvre le fichier de destination
             snprintf(filepath, sizeof(filepath), "%s%s", CLIENT_DIR, filename);
-            filefd = open(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            filefd = open(filepath, O_WRONLY | O_CREAT, 0644);
+            //Avance la tête jusqu'a loffset
+            lseek(filefd, offset, SEEK_SET);
             if (filefd < 0)
             {
                 perror("open client file");

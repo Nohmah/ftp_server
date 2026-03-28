@@ -70,11 +70,15 @@ void handle_connection(int connfd)
             break;
         }
         if (req.type == GET){
+
+            uint64_t offset = req.offset;
             //Construit le chemin du fichier
             snprintf(filepath, sizeof(filepath), "%s%s", SERV_DIR, req.name);
             printf("GET %s\n", filepath);
 
+
             filefd = open(filepath, O_RDONLY);
+
             if (filefd < 0)
             {   
                 //En faire une fonction
@@ -88,15 +92,28 @@ void handle_connection(int connfd)
             Rio_writen(connfd, &response, sizeof(response));
             //Récupère la taille du fichier pour lecture en 1 fois.
             fstat(filefd, &sf);
+
+            //Sécurité si la valeur de offset est > que la taille du fichier
+            if(offset > sf.st_size){
+                offset = 0;
+            }
+            
+
+            lseek(filefd, offset, SEEK_SET);
             transfer.block_size = MAX_BLOCK_SIZE;
-            transfer.file_size =(uint64_t)sf.st_size;
+            transfer.file_size =(uint64_t)sf.st_size - offset;
             transfer.block_count = (uint32_t)((transfer.file_size + MAX_BLOCK_SIZE -1) / MAX_BLOCK_SIZE);
             Rio_writen(connfd, &transfer, sizeof(transfer));
 
             //Lecture et envoi des données par paquets.
             while ((n = read(filefd, buf, MAX_BLOCK_SIZE)) > 0)
             {
-                Rio_writen(connfd, buf, n);
+                ssize_t nwritten = write(connfd, buf, n);
+                if( nwritten != n) {
+                    fprintf(stderr, "Client déconnecté pendant le transfert\n");
+                    break;
+
+                }
             }
 
             if( n < 0){
@@ -113,6 +130,9 @@ void handle_connection(int connfd)
  */
 int main(int argc, char **argv)
 {
+    //Ignore le SIGPIPE
+    Signal(SIGPIPE, SIG_IGN);
+
     int listenfd, connfd, port;
     socklen_t clientlen;
     struct sockaddr_in clientaddr;
