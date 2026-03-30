@@ -1,5 +1,6 @@
 #include "csapp.h"
 #include "ftp.h"
+#include <utime.h>
 #define MAX_NAME_LEN 256
 #define CLIENT_DIR "./clientdir/"
 #define PORT 2121
@@ -71,15 +72,21 @@ int main(int argc, char **argv)
             //Précise l'offset du fichier pour la reprise du telechargement
             struct stat st;
             uint64_t offset = 0;
+            //Variable qui stockera le mtime du fichier coté client.
+            time_t local_mtime = 0;
 
             snprintf(filepath, sizeof(filepath), "%s%s", CLIENT_DIR, filename);
             
 
             if(stat(filepath, &st) == 0){
                 offset = st.st_size;
+                //Récupère le timestamp pour la requete.
+                local_mtime = st.st_mtime;
             }
 
             req.offset = offset;
+            //Envoie le mtime du fichier du client au serveur.
+            req.mtime = local_mtime;
 
             Rio_writen(clientfd, &req, sizeof(req));
 
@@ -103,13 +110,24 @@ int main(int argc, char **argv)
 
             //Ouvre le fichier de destination
             snprintf(filepath, sizeof(filepath), "%s%s", CLIENT_DIR, filename);
-            filefd = open(filepath, O_WRONLY | O_CREAT, 0644);
-            //Avance la tête jusqu'a loffset
-            lseek(filefd, offset, SEEK_SET);
+            int open_flags = O_WRONLY | O_CREAT;
+            //Si l'offset est à 0, alors on réécrit tout le fichier.
+            if (transfer.start_offset == 0)
+            {
+                open_flags |= O_TRUNC;
+            }
+            filefd = open(filepath, open_flags, 0644);
             if (filefd < 0)
             {
                 perror("open client file");
                 exit(1);
+            }
+            // Avance la tete jusqu'a l'offset effectivement valide par le serveur.
+            if (lseek(filefd, transfer.start_offset, SEEK_SET) < 0)
+            {
+                perror("lseek");
+                close(filefd);
+                continue;
             }
             //Reception et ecriture des donnees bloc par bloc.
             bytes_left = transfer.file_size;
@@ -150,6 +168,19 @@ int main(int argc, char **argv)
             }   
             gettimeofday(&fin, NULL);
             printf("Transfer successfully complete.\n");
+
+            // Conserve le mtime serveur pour valider les futures reprises.
+            if (transfer_ok && bytes_left == 0)
+            {
+                struct utimbuf tb;
+                tb.actime = transfer.mtime;
+                tb.modtime = transfer.mtime;
+                if (utime(filepath, &tb) < 0)
+                {
+                    perror("utime");
+                }
+            }
+
             //Récupère les statistiques du transfert
             double temps = (fin.tv_sec - debut.tv_sec) + (fin.tv_usec - debut.tv_usec)/1e6;
             printf("%f bytes received in %f seconds (%f Kbytes/s)\n", taille, temps, (taille*1e-3)/temps);

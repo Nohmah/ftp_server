@@ -20,6 +20,7 @@ typedef struct {
     typereq_t type;
     char name[MAX_NAME_LEN];
     uint64_t offset;
+    time_t mtime;
 } request_t;
 
 
@@ -32,6 +33,8 @@ typedef struct {
     uint32_t block_size;
     uint64_t file_size;
     uint32_t block_count;
+    uint64_t start_offset;
+    time_t mtime;
 } transfer_t;
 
 typedef struct {

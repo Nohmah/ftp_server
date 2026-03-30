@@ -76,6 +76,7 @@ void handle_connection(int connfd)
         if (req.type == GET){
 
             uint64_t offset = req.offset;
+            time_t client_mtime = req.mtime;
             //Construit le chemin du fichier
             snprintf(filepath, sizeof(filepath), "%s%s", SERV_DIR, req.name);
             printf("GET %s\n", filepath);
@@ -97,6 +98,12 @@ void handle_connection(int connfd)
             //Récupère la taille du fichier pour lecture en 1 fois.
             fstat(filefd, &sf);
 
+            // Reprise autorisee uniquement si le client a la meme version du fichier.
+            if (offset > 0 && client_mtime != sf.st_mtime)
+            {
+                offset = 0;
+            }
+
             //Sécurité si la valeur de offset est > que la taille du fichier
             if(offset > sf.st_size){
                 offset = 0;
@@ -107,14 +114,15 @@ void handle_connection(int connfd)
             transfer.block_size = MAX_BLOCK_SIZE;
             transfer.file_size =(uint64_t)sf.st_size - offset;
             transfer.block_count = (uint32_t)((transfer.file_size + MAX_BLOCK_SIZE -1) / MAX_BLOCK_SIZE);
+            transfer.start_offset = offset;
+            transfer.mtime = sf.st_mtime;
             Rio_writen(connfd, &transfer, sizeof(transfer));
 
             //Lecture et envoi des données par paquets.
             while ((n = read(filefd, buf, MAX_BLOCK_SIZE)) > 0)
             {
-                ssize_t nwritten = write(connfd, buf, n);
-                if( nwritten != n) {
-                    fprintf(stderr, "Client déconnecté pendant le transfert\n");
+                if( rio_writen(connfd, buf, n) < 0) {
+                    perror("rio_written");
                     break;
 
                 }
