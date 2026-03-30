@@ -32,7 +32,17 @@ int main(int argc, char **argv)
     host = argv[1];
 
     clientfd = Open_clientfd(host, PORT);
-    printf("Connected to %s\n", host);
+    printf("Connecté au serveur maître%s\n", host);
+
+    slave_info_t redirection_info;
+    Rio_readn(clientfd, &redirection_info, sizeof(redirection_info));
+    printf("Redirigé vers le serveur esclave %s:%d\n", redirection_info.host, redirection_info.port);
+    Close(clientfd);
+
+    // Se connecte au serveur esclave
+    clientfd = Open_clientfd(redirection_info.host, redirection_info.port);
+    printf("Connecté\n");
+
     while (1){
         printf("ftp> ");
         

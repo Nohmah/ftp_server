@@ -8,6 +8,9 @@
 
 #define MAX_NAME_LEN 256
 #define N_PROC 5
+#define NB_SLAVES 2
+#define BASE_PORT 2121
+#define BASE_PORT_SLAVE 2122
 
 #define SERV_DIR "./servdir/"
 
@@ -37,11 +40,12 @@ void sigchld_handler(int sig)
 }
 
 void sigint_handler(int sig){
-    for(int i = 0; i < N_PROC; i++){
+    for(int i = 0; i < NB_SLAVES; i++){
         if(children[i] > 0){
             kill(children[i], SIGINT);
         }
     }
+    exit(0);
 }
 
 void handle_connection(int connfd)
@@ -61,7 +65,7 @@ void handle_connection(int connfd)
         n = Rio_readn(connfd, &req, sizeof(req));
         //Le client a fermé la connexion
         if (n == 0){
-            printf("Client deconnecte\n");
+            printf("Client déconnecte\n");
             break;
         }
         //La requête est illisible
@@ -124,6 +128,38 @@ void handle_connection(int connfd)
     }
 }
 
+void start_slave(int slave_id) {
+    int listenfd;
+    socklen_t clientlen;
+    struct sockaddr_in clientaddr;
+    char client_ip_string[INET_ADDRSTRLEN];
+    char client_hostname[MAX_NAME_LEN];
+    int connfd;
+
+    listenfd = Open_listenfd(BASE_PORT_SLAVE + slave_id);
+    printf("Serveur esclave %d: écoute sur le port %d\n", slave_id, BASE_PORT_SLAVE + slave_id);
+
+    while (1) {
+        clientlen = sizeof(clientaddr);
+        connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
+        if (connfd < 0) {
+            if (errno == EINTR) continue;
+            perror("accept esclave");
+            continue;
+        }
+
+        Getnameinfo((SA *)&clientaddr, clientlen,
+                    client_hostname, MAX_NAME_LEN, 0, 0, 0);
+        Inet_ntop(AF_INET, &clientaddr.sin_addr, client_ip_string,
+                  INET_ADDRSTRLEN);
+        printf("Esclave %d connecté à %s (%s)\n", slave_id,
+               client_hostname, client_ip_string);
+
+        handle_connection(connfd);
+        Close(connfd);
+    }
+}
+
 /*
  * Note that this code only works with IPv4 addresponseses
  * (IPv6 is not supported)
@@ -134,8 +170,10 @@ int main(int argc, char **argv)
     Signal(SIGPIPE, SIG_IGN);
 
     int listenfd, connfd, port;
+    int current_slave = 0;
     socklen_t clientlen;
     struct sockaddr_in clientaddr;
+    slave_info_t slaves[NB_SLAVES];
     char client_ip_string[INET_ADDRSTRLEN];
     char client_hostname[MAX_NAME_LEN];
     pid_t pid;
@@ -147,15 +185,28 @@ int main(int argc, char **argv)
     }
 
     Signal(SIGCHLD, sigchld_handler);
-    port = 2121;
+    port = BASE_PORT;
     listenfd = Open_listenfd(port);
 
-
+    // Lancement des serveurs esclaves
+    for (int i = 0; i < NB_SLAVES; i++) {
+        pid = Fork();
+        if (pid == 0) {
+            start_slave(i);
+        } else {
+            children[i] = pid;
+            slaves[i].port = BASE_PORT_SLAVE + i;
+            strcpy(slaves[i].host, "127.0.0.1");
+            printf("Serveur maître: esclave %d lancé sur %s:%d (pid %d)\n", i, slaves[i].host, slaves[i].port, pid);
+        }
+    }
+    //Le maitre tue ses esclaves si il est tué
+    Signal(SIGINT, sigint_handler);
     // Creation du pool
-    for (int i = 0; i < N_PROC; i++)
-    {
-        if ((pid = Fork()) == 0)
-        {
+    //for (int i = 0; i < N_PROC; i++)
+    //{
+    //    if ((pid = Fork()) == 0)
+    //    {
             while (1)
             {
                 clientlen = sizeof(clientaddr);
@@ -178,20 +229,29 @@ int main(int argc, char **argv)
 
                 printf("server connected to %s (%s)\n", client_hostname,
                        client_ip_string);
-
-                handle_connection(connfd);
+                
+                // Le serveur choisit quel esclave va répondre à la requête du client
+                slave_info_t redirection_info;
+                redirection_info = slaves[current_slave];
+                printf("Serveur maître: client redirigé vers l'esclave n°%d (%s:%d)\n",current_slave, redirection_info.host, redirection_info.port);
+                // La prochaine connexion utilisera le prochain slave
+                current_slave = (current_slave + 1) % NB_SLAVES;
+                // Envoi au client des infos du slave choisi
+                Rio_writen(connfd, &redirection_info, sizeof(redirection_info));
+                
+                //handle_connection(connfd);
                 Close(connfd);
             }
-        } else {
-            children[i] = pid;
-        }
-    }
+        //} else {
+        //    children[i] = pid;
+        //}
+    //}
     //Défini le signal après la création du pool pour modifier uniquement le handler du pere, les fils auront le traitant de SIGINT par défaut.
-    Signal(SIGINT, sigint_handler);
-    while (children_alive > 0)
-    {
-        pause();
-    }
+    //Signal(SIGINT, sigint_handler);
+    //while (children_alive > 0)
+    //{
+    //    pause();
+    //}
 
     return 0;
 }
