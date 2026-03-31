@@ -75,8 +75,8 @@ void handle_connection(int connfd)
         }
         if (req.type == GET){
 
-            uint64_t offset = req.offset;
-            time_t client_mtime = req.mtime;
+            uint64_t offset = be64toh(req.offset);
+            time_t client_mtime = (time_t)be64toh((u_int64_t)req.mtime);
             //Construit le chemin du fichier
             snprintf(filepath, sizeof(filepath), "%s%s", SERV_DIR, req.name);
             printf("GET %s\n", filepath);
@@ -111,11 +111,12 @@ void handle_connection(int connfd)
             
 
             lseek(filefd, offset, SEEK_SET);
-            transfer.block_size = MAX_BLOCK_SIZE;
-            transfer.file_size =(uint64_t)sf.st_size - offset;
-            transfer.block_count = (uint32_t)((transfer.file_size + MAX_BLOCK_SIZE -1) / MAX_BLOCK_SIZE);
-            transfer.start_offset = offset;
-            transfer.mtime = sf.st_mtime;
+            uint64_t file_size = (uint64_t) sf.st_size - offset;
+            transfer.block_size = htonl(MAX_BLOCK_SIZE);
+            transfer.block_count = htonl((uint32_t)((file_size + MAX_BLOCK_SIZE -1) / MAX_BLOCK_SIZE));
+            transfer.file_size =htobe64(file_size);
+            transfer.start_offset = htobe64(offset);
+            transfer.mtime = htobe64(sf.st_mtime);
             Rio_writen(connfd, &transfer, sizeof(transfer));
 
             //Lecture et envoi des données par paquets.

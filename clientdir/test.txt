@@ -1,0 +1,14 @@
+28 points avec etape 4 en plus.
+rapport:
+structure
+langage
+explications claires et completes
+git:
+mise en place, utilisation
+serveur concurrent, schema avec pull
+terminaison propre,
+utilisation de stat et fstat
+heterogenité des machines utile ? (a preciser dans le rapport)
+tests (peu de points)
+schema
+s

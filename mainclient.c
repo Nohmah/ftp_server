@@ -95,9 +95,9 @@ int main(int argc, char **argv)
                 local_mtime = st.st_mtime;
             }
 
-            req.offset = offset;
+            req.offset = htobe64(offset);
             //Envoie le mtime du fichier du client au serveur.
-            req.mtime = local_mtime;
+            req.mtime = htobe64(local_mtime);
 
             Rio_writen(clientfd, &req, sizeof(req));
 
@@ -113,6 +113,12 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Erreur: entete de transfert incomplete\n");
                 break;
             }
+            transfer.block_size = ntohl(transfer.block_size);
+            transfer.block_count = ntohl(transfer.block_count);
+            transfer.file_size = be64toh(transfer.file_size);
+            transfer.start_offset = be64toh(transfer.start_offset);
+            transfer.mtime = be64toh(transfer.mtime);
+
             if (transfer.block_size == 0 || transfer.block_size > MAX_BLOCK_SIZE)
             {
                 fprintf(stderr, "Erreur: taille de bloc non supportee (%u)\n", transfer.block_size);
