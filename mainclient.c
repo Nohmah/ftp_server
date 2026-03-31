@@ -32,7 +32,11 @@ int main(int argc, char **argv)
 
     host = argv[1];
 
-    clientfd = Open_clientfd(host, PORT);
+    clientfd = open_clientfd(host, PORT);
+        if (clientfd < 0) {
+        fprintf(stderr, "Erreur: Impossible de se connecter au serveur maître\n");
+        exit(1);
+    }
     printf("Connecté au serveur maître%s\n", host);
 
     // S'identifie comme client au serveur maître
@@ -44,7 +48,7 @@ int main(int argc, char **argv)
     slave_info_t redirection_info;
     n = Rio_readn(clientfd, &redirection_info, sizeof(redirection_info));
     if (n != sizeof(redirection_info)) {
-        fprintf(stderr, "Erreur: aucun serveur disponible pour se connecter\n");
+        fprintf(stderr, "Erreur: Aucun serveur esclave disponible pour se connecter\n");
         Close(clientfd);
         exit(1);
     }
@@ -52,7 +56,11 @@ int main(int argc, char **argv)
     Close(clientfd);
 
     // Se connecte au serveur esclave
-    clientfd = Open_clientfd(redirection_info.host, redirection_info.port);
+    clientfd = open_clientfd(redirection_info.host, redirection_info.port);
+        if (clientfd < 0) {
+        fprintf(stderr, "Erreur: Impossible de se connecter au serveur esclave choisi par le maître\n");
+        exit(1);
+    }
     printf("Connecté\n");
 
     while (1){

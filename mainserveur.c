@@ -1,5 +1,5 @@
 /*
- * mainserveurp.c - Un serveur avec pool de processus
+ * mainserveur.c - Un serveur maitre avec des serveurs esclaves
  */
 
 #include "csapp.h"
@@ -7,25 +7,24 @@
 #include "time.h"
 
 #define MAX_NAME_LEN 256
-#define N_PROC 5
 #define NB_SLAVES 3
 #define BASE_PORT 2121
 #define BASE_PORT_SLAVE 2122
 
 #define SERV_DIR "./servdir/"
 
-volatile sig_atomic_t children_alive = N_PROC;
+volatile sig_atomic_t children_alive = NB_SLAVES;
 
-//Tableau global stockant les pids des processus du pool.
-pid_t children[N_PROC];
+//Tableau global stockant les pids des serveurs esclaves.
+pid_t children[NB_SLAVES];
 
 void sigchld_handler(int sig)
 {
     pid_t pid;
     int status;
 
-    // Boucle non blocante pour récolter les enfants terminés et arrêtés
-    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0)
+    // Boucle non blocante pour récolter les enfants terminés
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
     {
         if(WIFEXITED(status) || WIFSIGNALED(status)){
             children_alive --;
@@ -33,7 +32,6 @@ void sigchld_handler(int sig)
     }
     if (pid == -1 && errno != ECHILD)
     {
-        // -1 alors qu'il y a encore des fils à récolter
         perror("waitpid");
     }
     return;
@@ -56,7 +54,6 @@ void handle_connection(int connfd)
     char filepath[MAX_NAME_LEN + sizeof(SERV_DIR)];
     char buf[MAX_BLOCK_SIZE];
     int filefd;
-    //int size_t;
     ssize_t n;
     struct stat sf;
 
@@ -86,11 +83,9 @@ void handle_connection(int connfd)
 
             if (filefd < 0)
             {   
-                //En faire une fonction
                 response.code_retour = ERREUR;
                 strcpy(response.message, "Fichier introuvable dans le serveur");
                 Rio_writen(connfd, &response, sizeof(response));
-                //fprintf(stderr, "Fichier introuvable : %s\n", filepath);
                 continue;
             }
             response.code_retour = SUCCES;
@@ -201,7 +196,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: %s\n", argv[0]);
         exit(0);
     }
-
+    //Le maitre récoltes ses esclaves si ils s
     Signal(SIGCHLD, sigchld_handler);
     port = BASE_PORT;
     listenfd = Open_listenfd(port);
@@ -221,86 +216,70 @@ int main(int argc, char **argv)
     }
     //Le maitre tue ses esclaves si il est tué
     Signal(SIGINT, sigint_handler);
-    // Creation du pool
-    //for (int i = 0; i < N_PROC; i++)
-    //{
-    //    if ((pid = Fork()) == 0)
-    //    {
-            while (1)
+        while (1)
+        {
+            clientlen = sizeof(clientaddr);
+            connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
+            if (connfd < 0)
             {
-                clientlen = sizeof(clientaddr);
-                connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
-                if (connfd < 0)
+                if (errno == EINTR)
                 {
-                    if (errno == EINTR)
-                    {
-                        continue;
-                    }
-                    perror("accept");
                     continue;
                 }
-
-                Getnameinfo((SA *)&clientaddr, clientlen,
-                            client_hostname, MAX_NAME_LEN, 0, 0, 0);
-
-                Inet_ntop(AF_INET, &clientaddr.sin_addr, client_ip_string,
-                          INET_ADDRSTRLEN);
-                
-                // Détermine qui communique avec lui
-                identification_t id;
-                ssize_t n = Rio_readn(connfd, &id, sizeof(id));
-                if (n != sizeof(id)) {
-                    printf("Serveur maître: Erreur lecture identification\n");
-                    Close(connfd);
-                    continue;
-                }
-
-                if (id.type == SLAVE) {
-                    slaves_busy[id.slave_id] = 0;
-                    printf("Serveur maître: esclave %d libre\n", id.slave_id);
-                    Close(connfd);
-                    continue;
-                }
-
-                // C'est un client qui s'est connecté
-                printf("server connected to %s (%s)\n", client_hostname,
-                    client_ip_string);
-                // Le serveur maître cherche quel esclave va répondre à la requête du client
-                // avec une politique Round-Robin
-                int chosen_slave = -1;
-                for (int i = 0; i<NB_SLAVES; i++) {
-                    int j = (current_slave + i) % NB_SLAVES;
-                    if (slaves_busy[j] == 0) {
-                        slaves_busy[j] = 1;
-                        chosen_slave = j;
-                        break;
-                    }
-                }
-                if (chosen_slave == -1) {
-                    printf("Serveur maître: tous les esclaves sont occupés, client rejeté\n");
-                    Close(connfd);
-                    continue;
-                }
-                slave_info_t redirection_info;
-                redirection_info = slaves[chosen_slave];
-                // Envoi au client des infos du slave choisi
-                Rio_writen(connfd, &redirection_info, sizeof(redirection_info));
-                printf("Serveur maître: client redirigé vers l'esclave n°%d (%s:%d)\n", chosen_slave, redirection_info.host, redirection_info.port);
-                // La prochaine connexion utilisera l'esclave suivant (Round-Robin)'
-                current_slave = (chosen_slave + 1) % NB_SLAVES;
-                //handle_connection(connfd);
-                Close(connfd);
+                perror("accept");
+                continue;
             }
-        //} else {
-        //    children[i] = pid;
-        //}
-    //}
-    //Défini le signal après la création du pool pour modifier uniquement le handler du pere, les fils auront le traitant de SIGINT par défaut.
-    //Signal(SIGINT, sigint_handler);
-    //while (children_alive > 0)
-    //{
-    //    pause();
-    //}
 
+            Getnameinfo((SA *)&clientaddr, clientlen,
+                        client_hostname, MAX_NAME_LEN, 0, 0, 0);
+
+            Inet_ntop(AF_INET, &clientaddr.sin_addr, client_ip_string,
+                        INET_ADDRSTRLEN);
+            
+            // Détermine qui communique avec lui
+            identification_t id;
+            ssize_t n = Rio_readn(connfd, &id, sizeof(id));
+            if (n != sizeof(id)) {
+                printf("Serveur maître: Erreur lecture identification\n");
+                Close(connfd);
+                continue;
+            }
+
+            if (id.type == SLAVE) {
+                slaves_busy[id.slave_id] = 0;
+                printf("Serveur maître: esclave %d libre\n", id.slave_id);
+                Close(connfd);
+                continue;
+            }
+
+            // C'est un client qui s'est connecté (id.type == CLIENT)
+            printf("server connected to %s (%s)\n", client_hostname,
+                client_ip_string);
+            // Le serveur maître cherche quel esclave va répondre à la requête du client
+            // avec une politique Round-Robin
+            int chosen_slave = -1;
+            for (int i = 0; i<NB_SLAVES; i++) {
+                int j = (current_slave + i) % NB_SLAVES;
+                if (slaves_busy[j] == 0) {
+                    slaves_busy[j] = 1;
+                    chosen_slave = j;
+                    break;
+                }
+            }
+            if (chosen_slave == -1) {
+                printf("Serveur maître: tous les esclaves sont occupés, client rejeté\n");
+                Close(connfd);
+                continue;
+            }
+            slave_info_t redirection_info;
+            redirection_info = slaves[chosen_slave];
+            // Envoi au client des infos du slave choisi
+            Rio_writen(connfd, &redirection_info, sizeof(redirection_info));
+            printf("Serveur maître: client redirigé vers l'esclave n°%d (%s:%d)\n", chosen_slave, redirection_info.host, redirection_info.port);
+            // La prochaine connexion utilisera l'esclave suivant (Round-Robin)
+            current_slave = (chosen_slave + 1) % NB_SLAVES;
+
+            Close(connfd);
+        }
     return 0;
 }
