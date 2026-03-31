@@ -16,6 +16,11 @@ typedef enum {
     LS
 } typereq_t;
 
+typedef enum {
+    CLIENT,
+    SLAVE
+} origin_t;
+
 typedef struct {
     typereq_t type;
     char name[MAX_NAME_LEN];
@@ -41,5 +46,10 @@ typedef struct {
     char host[MAX_NAME_LEN];
     int port;
 } slave_info_t;
+
+typedef struct {
+    origin_t type;
+    int slave_id;
+} identification_t;
 
 #endif

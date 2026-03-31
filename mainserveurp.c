@@ -8,7 +8,7 @@
 
 #define MAX_NAME_LEN 256
 #define N_PROC 5
-#define NB_SLAVES 2
+#define NB_SLAVES 3
 #define BASE_PORT 2121
 #define BASE_PORT_SLAVE 2122
 
@@ -137,12 +137,11 @@ void handle_connection(int connfd)
 }
 
 void start_slave(int slave_id) {
-    int listenfd;
+    int listenfd, connfd, slavefd;
     socklen_t clientlen;
     struct sockaddr_in clientaddr;
     char client_ip_string[INET_ADDRSTRLEN];
     char client_hostname[MAX_NAME_LEN];
-    int connfd;
 
     listenfd = Open_listenfd(BASE_PORT_SLAVE + slave_id);
     printf("Serveur esclave %d: écoute sur le port %d\n", slave_id, BASE_PORT_SLAVE + slave_id);
@@ -165,6 +164,15 @@ void start_slave(int slave_id) {
 
         handle_connection(connfd);
         Close(connfd);
+        
+        //Le client s'est déconnecté de l'esclave
+        //L'esclave informe le maitre qu'il est libre
+        slavefd = Open_clientfd("127.0.0.1", BASE_PORT);
+        identification_t id;
+        id.type = SLAVE;
+        id.slave_id = slave_id;
+        Rio_writen(slavefd, &id, sizeof(id));
+        Close(slavefd);
     }
 }
 
@@ -182,6 +190,7 @@ int main(int argc, char **argv)
     socklen_t clientlen;
     struct sockaddr_in clientaddr;
     slave_info_t slaves[NB_SLAVES];
+    int slaves_busy[NB_SLAVES];
     char client_ip_string[INET_ADDRSTRLEN];
     char client_hostname[MAX_NAME_LEN];
     pid_t pid;
@@ -202,6 +211,7 @@ int main(int argc, char **argv)
         if (pid == 0) {
             start_slave(i);
         } else {
+            slaves_busy[i] = 0;
             children[i] = pid;
             slaves[i].port = BASE_PORT_SLAVE + i;
             strcpy(slaves[i].host, "127.0.0.1");
@@ -234,19 +244,49 @@ int main(int argc, char **argv)
 
                 Inet_ntop(AF_INET, &clientaddr.sin_addr, client_ip_string,
                           INET_ADDRSTRLEN);
-
-                printf("server connected to %s (%s)\n", client_hostname,
-                       client_ip_string);
                 
-                // Le serveur choisit quel esclave va répondre à la requête du client
+                // Détermine qui communique avec lui
+                identification_t id;
+                ssize_t n = Rio_readn(connfd, &id, sizeof(id));
+                if (n != sizeof(id)) {
+                    printf("Serveur maître: Erreur lecture identification\n");
+                    Close(connfd);
+                    continue;
+                }
+
+                if (id.type == SLAVE) {
+                    slaves_busy[id.slave_id] = 0;
+                    printf("Serveur maître: esclave %d libre\n", id.slave_id);
+                    Close(connfd);
+                    continue;
+                }
+
+                // C'est un client qui s'est connecté
+                printf("server connected to %s (%s)\n", client_hostname,
+                    client_ip_string);
+                // Le serveur maître cherche quel esclave va répondre à la requête du client
+                // avec une politique Round-Robin
+                int chosen_slave = -1;
+                for (int i = 0; i<NB_SLAVES; i++) {
+                    int j = (current_slave + i) % NB_SLAVES;
+                    if (slaves_busy[j] == 0) {
+                        slaves_busy[j] = 1;
+                        chosen_slave = j;
+                        break;
+                    }
+                }
+                if (chosen_slave == -1) {
+                    printf("Serveur maître: tous les esclaves sont occupés, client rejeté\n");
+                    Close(connfd);
+                    continue;
+                }
                 slave_info_t redirection_info;
-                redirection_info = slaves[current_slave];
-                printf("Serveur maître: client redirigé vers l'esclave n°%d (%s:%d)\n",current_slave, redirection_info.host, redirection_info.port);
-                // La prochaine connexion utilisera le prochain slave
-                current_slave = (current_slave + 1) % NB_SLAVES;
+                redirection_info = slaves[chosen_slave];
                 // Envoi au client des infos du slave choisi
                 Rio_writen(connfd, &redirection_info, sizeof(redirection_info));
-                
+                printf("Serveur maître: client redirigé vers l'esclave n°%d (%s:%d)\n", chosen_slave, redirection_info.host, redirection_info.port);
+                // La prochaine connexion utilisera l'esclave suivant (Round-Robin)'
+                current_slave = (chosen_slave + 1) % NB_SLAVES;
                 //handle_connection(connfd);
                 Close(connfd);
             }

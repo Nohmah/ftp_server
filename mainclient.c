@@ -35,8 +35,19 @@ int main(int argc, char **argv)
     clientfd = Open_clientfd(host, PORT);
     printf("Connecté au serveur maître%s\n", host);
 
+    // S'identifie comme client au serveur maître
+    identification_t id;
+    id.type = CLIENT;
+    Rio_writen(clientfd, &id, sizeof(id));
+
+    // Récupère les informations sur l'esclave choisi par le serveur maître
     slave_info_t redirection_info;
-    Rio_readn(clientfd, &redirection_info, sizeof(redirection_info));
+    n = Rio_readn(clientfd, &redirection_info, sizeof(redirection_info));
+    if (n != sizeof(redirection_info)) {
+        fprintf(stderr, "Erreur: aucun serveur disponible pour se connecter\n");
+        Close(clientfd);
+        exit(1);
+    }
     printf("Redirigé vers le serveur esclave %s:%d\n", redirection_info.host, redirection_info.port);
     Close(clientfd);
 
@@ -106,6 +117,16 @@ int main(int argc, char **argv)
             {
                 fprintf(stderr, "Erreur: taille de bloc non supportee (%u)\n", transfer.block_size);
                 break;
+            }
+
+            // Vérifier l'existence du dossier clientdir avant d'ouvrir le fichier de destination
+            // Et le crée si besoin
+            struct stat dir;
+            if (stat(CLIENT_DIR, &dir) == -1) {
+                if (mkdir(CLIENT_DIR, 0755) == -1) {
+                    perror("mkdir");
+                    continue;
+                }
             }
 
             //Ouvre le fichier de destination
